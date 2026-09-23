@@ -1,0 +1,7 @@
+notebooks/
+data/
+tests/
+.github/
+.venv/
+.pytest_cache/
+.ruff_cache/
