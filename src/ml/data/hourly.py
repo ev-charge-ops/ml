@@ -28,6 +28,7 @@ def site_concurrency(site_sessions: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(
         {
             "timestamp": timestamps,
+            "connected_at_start": per_hour[:, 0],
             "connected": per_hour.mean(axis=1),
             "peak_connected": per_hour.max(axis=1),
             "arrivals": arrivals.to_numpy(),
@@ -61,10 +62,11 @@ def build_hourly_panel(sessions: pd.DataFrame) -> pd.DataFrame:
             )
         )
     panel = pd.concat(frames, ignore_index=True)
-    excess = panel["connected"] - panel["capacity"]
+    snapshot = panel["connected_at_start"]
     return panel.assign(
         hour=panel["timestamp"].dt.hour,
         day_of_week=panel["timestamp"].dt.dayofweek,
-        occupancy_ratio=(panel["connected"] / panel["capacity"]).clip(upper=1.0),
-        queue_length=np.ceil(excess.clip(lower=0)).astype(int),
+        occupancy_ratio=(snapshot / panel["capacity"]).clip(upper=1.0),
+        queue_length=(snapshot - panel["capacity"]).clip(lower=0).astype(int),
+        demand_index=panel["connected"] / panel["capacity"],
     )
