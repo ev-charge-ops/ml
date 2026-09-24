@@ -1,0 +1,13 @@
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+DATA_DIR = PROJECT_ROOT / "data"
+RAW_DATA_DIR = DATA_DIR / "raw"
+SAMPLE_DATA_DIR = DATA_DIR / "sample"
+ARTIFACTS_DIR = PROJECT_ROOT / "artifacts"
+
+RANDOM_SEED = 42
+
+PRIVATE = "PRIVATE"
+COMMERCIAL = "COMMERCIAL"
+CHARGE_POINT_TYPES = (PRIVATE, COMMERCIAL)

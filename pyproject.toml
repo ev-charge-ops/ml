@@ -1,7 +1,7 @@
 [project]
 name = "ml"
 version = "0.1.0"
-description = "Add your description here"
+description = "EV ChargeOps machine learning models and inference API"
 readme = "README.md"
 authors = [
     { name = "Rodrigo Dias", email = "rodrigogmdias@gmail.com" }
@@ -9,6 +9,8 @@ authors = [
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.142.2",
+    "numpy>=2.5.3",
+    "scikit-learn>=1.9.1",
 ]
 
 [project.scripts]
@@ -23,6 +25,13 @@ dev = [
     "httpx>=0.28.1",
     "pytest>=9.1.1",
     "ruff>=0.16.10",
+]
+research = [
+    "ipykernel>=7.4.0",
+    "jupyter>=1.1.1",
+    "matplotlib>=3.11.2",
+    "nbconvert>=7.17.1",
+    "pandas>=3.0.6",
 ]
 
 [tool.vercel]
