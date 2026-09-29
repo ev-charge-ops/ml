@@ -1,0 +1,116 @@
+{
+  "model": "demand_factor",
+  "version": "v1",
+  "algorithm": "GradientBoostingRegressor",
+  "sklearn_version": "1.9.1",
+  "data_sources": [
+    "Sorensen (2024), residential EV charging in Norway, doi:10.5281/zenodo.13896176",
+    "Andrenacci, Bosch, Kulla (2021), Turku public charging, doi:10.5281/zenodo.5721233"
+  ],
+  "target": "demand index: mean connected vehicles over the next 3 hours / capacity",
+  "split": "temporal: last 20% of the hours of each site are the test set",
+  "rows": {
+    "train": 182869,
+    "test": 45703
+  },
+  "params": {
+    "loss": "huber",
+    "n_estimators": 300,
+    "max_depth": 5,
+    "learning_rate": 0.05,
+    "subsample": 0.8,
+    "random_state": 42
+  },
+  "features": [
+    "hour",
+    "day_of_week",
+    "is_weekend",
+    "occupancy_ratio",
+    "queue_length",
+    "is_commercial"
+  ],
+  "feature_importances": {
+    "hour": 0.0543,
+    "day_of_week": 0.0031,
+    "is_weekend": 0.0016,
+    "occupancy_ratio": 0.9287,
+    "queue_length": 0.0024,
+    "is_commercial": 0.01
+  },
+  "test_metrics": {
+    "ALL": {
+      "model": {
+        "mae": 0.0927135843003808,
+        "rmse": 0.17631320785762944,
+        "r2": 0.7742025309476335
+      },
+      "persistence": {
+        "mae": 0.09598744504864455,
+        "rmse": 0.21274398516099613,
+        "r2": 0.6712513667258289
+      },
+      "hourly_mean": {
+        "mae": 0.2474228480878366,
+        "rmse": 0.3261776355506464,
+        "r2": 0.22721668654284666
+      }
+    },
+    "COMMERCIAL": {
+      "model": {
+        "mae": 0.11331767078285586,
+        "rmse": 0.2203331617655754,
+        "r2": 0.6107123001915622
+      },
+      "persistence": {
+        "mae": 0.11205714489230796,
+        "rmse": 0.2642199804575906,
+        "r2": 0.44018792647910354
+      },
+      "hourly_mean": {
+        "mae": 0.2470610603723682,
+        "rmse": 0.3416914856452067,
+        "r2": 0.06377709378265006
+      }
+    },
+    "PRIVATE": {
+      "model": {
+        "mae": 0.06792511525099001,
+        "rmse": 0.10039947594526372,
+        "r2": 0.8983790246798226
+      },
+      "persistence": {
+        "mae": 0.07665422891472541,
+        "rmse": 0.12538589991571056,
+        "r2": 0.84150415939801
+      },
+      "hourly_mean": {
+        "mae": 0.2478581094907124,
+        "rmse": 0.3064741734859409,
+        "r2": 0.053091027158767345
+      }
+    }
+  },
+  "factor_mapping": {
+    "demand_knots": [
+      0.25,
+      0.5,
+      0.9
+    ],
+    "factor_knots": [
+      0.8,
+      1.0,
+      1.5
+    ],
+    "clip": [
+      0.8,
+      1.5
+    ]
+  },
+  "test_factor_quantiles": {
+    "0.1": 0.8,
+    "0.25": 0.8,
+    "0.5": 0.8,
+    "0.75": 1.1768621677158555,
+    "0.9": 1.4538053876967092
+  }
+}
