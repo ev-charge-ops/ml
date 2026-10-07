@@ -1,0 +1,85 @@
+{
+  "model": "anomaly",
+  "version": "v1",
+  "algorithm": "IsolationForest (one per charge point type)",
+  "sklearn_version": "1.9.1",
+  "data_sources": [
+    "Sorensen (2024), residential EV charging in Norway, doi:10.5281/zenodo.13896176",
+    "Andrenacci, Bosch, Kulla (2021), Turku public charging, doi:10.5281/zenodo.5721233"
+  ],
+  "split": "random 80/20 over valid sessions",
+  "rows": {
+    "train": 31939,
+    "test_normal": 7956,
+    "test_injected": 400
+  },
+  "params": {
+    "n_estimators": 300,
+    "max_samples": 1024,
+    "random_state": 42
+  },
+  "features": [
+    "energy_kwh",
+    "duration_hours",
+    "idle_hours",
+    "average_power_kw",
+    "charging_power_kw",
+    "start_hour_sin",
+    "start_hour_cos"
+  ],
+  "score_normalization": {
+    "rule": "raw isolation score mapped piecewise-linearly per charge point type",
+    "anchors": {
+      "0.0": "quantile 0.01 of training raw scores",
+      "0.5": "quantile 0.98 of training raw scores",
+      "1.0": "raw score 1.0"
+    },
+    "is_anomaly": "score >= 0.5",
+    "raw_scales": {
+      "PRIVATE": {
+        "floor": 0.3935336455132092,
+        "threshold": 0.6085027553108057
+      },
+      "COMMERCIAL": {
+        "floor": 0.3678174759594618,
+        "threshold": 0.6129426584958911
+      }
+    }
+  },
+  "test_metrics": {
+    "precision": 0.6570841889117043,
+    "recall": 0.8,
+    "f1": 0.7215332581736189,
+    "false_positive_rate": 0.020990447461035695,
+    "roc_auc": 0.9687899069884365,
+    "average_precision": 0.7519561860269292
+  },
+  "test_metrics_by_type": {
+    "COMMERCIAL": {
+      "precision": 0.7682926829268293,
+      "recall": 0.9402985074626866,
+      "f1": 0.8456375838926175,
+      "false_positive_rate": 0.01527331189710611,
+      "roc_auc": 0.996604597590824,
+      "average_precision": 0.9418946873776454
+    },
+    "PRIVATE": {
+      "precision": 0.6345679012345679,
+      "recall": 0.7717717717717718,
+      "f1": 0.6964769647696477,
+      "false_positive_rate": 0.02205005959475566,
+      "roc_auc": 0.9617631636403984,
+      "average_precision": 0.692979558514449
+    }
+  },
+  "recall_by_kind": {
+    "extended_occupation": 1.0,
+    "meter_spike": 1.0,
+    "phantom_occupation": 0.2,
+    "short_burst": 1.0
+  },
+  "real_sessions_over_72h_flagged": {
+    "sessions": 309,
+    "flagged_share": 1.0
+  }
+}
