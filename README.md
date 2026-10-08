@@ -213,3 +213,181 @@ uv run python -m ml.data.download
 uv run jupyter lab notebooks/
 ```
 
+## 6. Contrato da API
+
+Base: `https://ml.evchargeops.com.br`. Todos os campos são obrigatórios e validados em modo estrito (tipos não são convertidos: `"0.5"` como texto é rejeitado, mas um inteiro é aceito onde se espera número). Valores `NaN` e infinitos são rejeitados.
+
+### `GET /health`
+
+```bash
+curl https://ml.evchargeops.com.br/health
+```
+
+```json
+{"status": "ok", "models": {"demandFactor": "v1", "anomaly": "v1"}}
+```
+
+### `POST /demand-factor`
+
+| Campo | Tipo | Regra |
+|---|---|---|
+| `hour` | inteiro | 0 a 23 |
+| `dayOfWeek` | inteiro | 0 a 6 (0 = segunda) |
+| `occupancyRatio` | número | 0 a 1 |
+| `queueLength` | inteiro | ≥ 0 |
+| `chargePointType` | texto | `PRIVATE` ou `COMMERCIAL` |
+
+```bash
+curl -X POST https://ml.evchargeops.com.br/demand-factor \
+  -H 'Content-Type: application/json' \
+  -d '{"hour": 21, "dayOfWeek": 2, "occupancyRatio": 0.8, "queueLength": 0, "chargePointType": "PRIVATE"}'
+```
+
+```json
+{"factor": 1.4597, "modelVersion": "v1"}
+```
+
+Com a garagem quase vazia de madrugada (`"hour": 3, "occupancyRatio": 0.1`) a resposta é `{"factor": 0.8, "modelVersion": "v1"}`. O fator é arredondado a 4 casas e está sempre em [0,8; 1,5].
+
+### `POST /anomaly-score`
+
+| Campo | Tipo | Regra |
+|---|---|---|
+| `energyKwh` | número | ≥ 0 |
+| `durationMinutes` | número | ≥ 0 |
+| `idleMinutes` | número | ≥ 0 (valores maiores que a duração são limitados à duração) |
+| `averagePowerKw` | número | ≥ 0 |
+| `startHour` | inteiro | 0 a 23 |
+| `dayOfWeek` | inteiro | 0 a 6 (0 = segunda) |
+| `chargePointType` | texto | `PRIVATE` ou `COMMERCIAL` |
+
+Sessão residencial típica (10 h conectado, 12,5 kWh, 7 h ociosa):
+
+```bash
+curl -X POST https://ml.evchargeops.com.br/anomaly-score \
+  -H 'Content-Type: application/json' \
+  -d '{"energyKwh": 12.5, "durationMinutes": 600, "idleMinutes": 420, "averagePowerKw": 1.25, "startHour": 19, "dayOfWeek": 2, "chargePointType": "PRIVATE"}'
+```
+
+```json
+{"score": 0.0521, "isAnomaly": false, "modelVersion": "v1"}
+```
+
+Sessão impossível (45 kWh em 10 minutos num ponto residencial):
+
+```bash
+curl -X POST https://ml.evchargeops.com.br/anomaly-score \
+  -H 'Content-Type: application/json' \
+  -d '{"energyKwh": 45, "durationMinutes": 10, "idleMinutes": 0, "averagePowerKw": 270, "startHour": 3, "dayOfWeek": 6, "chargePointType": "PRIVATE"}'
+```
+
+```json
+{"score": 0.612, "isAnomaly": true, "modelVersion": "v1"}
+```
+
+O `score` é arredondado a 4 casas e `isAnomaly = score >= 0,5`.
+
+### Erros de validação (422)
+
+Entradas fora do contrato retornam **HTTP 422** com a lista de todos os campos inválidos, no formato padrão do FastAPI. Nenhuma previsão é feita.
+
+```bash
+curl -X POST https://ml.evchargeops.com.br/demand-factor \
+  -H 'Content-Type: application/json' \
+  -d '{"hour": 24, "dayOfWeek": 2, "occupancyRatio": "0.5", "queueLength": 0, "chargePointType": "PUBLIC"}'
+```
+
+```json
+{
+  "detail": [
+    {"type": "less_than_equal", "loc": ["body", "hour"], "msg": "Input should be less than or equal to 23", "input": 24, "ctx": {"le": 23}},
+    {"type": "float_type", "loc": ["body", "occupancyRatio"], "msg": "Input should be a valid number", "input": "0.5"},
+    {"type": "literal_error", "loc": ["body", "chargePointType"], "msg": "Input should be 'PRIVATE' or 'COMMERCIAL'", "input": "PUBLIC", "ctx": {"expected": "'PRIVATE' or 'COMMERCIAL'"}}
+  ]
+}
+```
+
+O mesmo vale para campos ausentes, valores negativos e tipos de ponto desconhecidos em `/anomaly-score`. A especificação OpenAPI completa está em [`/docs`](https://ml.evchargeops.com.br/docs) e `/openapi.json`.
+
+## 7. Como executar localmente
+
+Pré-requisito: [uv](https://docs.astral.sh/uv/getting-started/installation/). O uv instala o Python 3.12 indicado em `.python-version`.
+
+```bash
+# dependências (runtime + dev + research)
+uv sync --all-groups
+
+# dados brutos (necessários apenas para treinar e para os notebooks)
+uv run python -m ml.data.download
+
+# treino: grava model.joblib e metrics.json em artifacts/<modelo>/v1/
+uv run python -m ml.training.train                        # os dois modelos
+uv run python -m ml.training.train --model demand_factor
+uv run python -m ml.training.train --model anomaly
+
+# serviço de inferência em http://localhost:8000 (documentação em /docs)
+# o uvicorn não é dependência do projeto (na Vercel o runtime é próprio), por isso o --with
+uv run --with uvicorn uvicorn ml.app:app --reload
+
+# qualidade: os mesmos passos da CI
+uv run ruff check .
+uv run ruff format --check .
+uv run pytest
+```
+
+Os artefatos v1 já estão versionados, então o serviço e os testes funcionam sem baixar dados nem treinar.
+
+Os testes cobrem carregamento dos dados e do painel hora a hora (`test_data.py`), variáveis (`test_features.py`), montagem do alvo e injeção de anomalias (`test_training.py`), comportamento dos artefatos versionados, como limites do fator, monotonicidade na ocupação e separação entre sessões normais e impossíveis (`test_models.py`), e os endpoints com entradas válidas e inválidas (`test_api.py`).
+
+**CI** (`.github/workflows/ci.yml`): a cada push na `main` e a cada pull request, executa `uv sync --locked --all-groups`, `ruff check`, `ruff format --check` e `pytest`.
+
+**Deploy:** a Vercel publica o serviço a partir da `main`, com o ponto de entrada `src.ml.app:app` definido em `pyproject.toml`. Notebooks, dados e testes ficam fora do pacote publicado (`.vercelignore`), e o grupo `research` (pandas, Jupyter, matplotlib) não é instalado em produção.
+
+## 8. Estrutura do repositório
+
+```
+ml/
+├── artifacts/                     # modelos versionados carregados pela API
+│   ├── demand_factor/v1/          # model.joblib, metrics.json, model-card.md
+│   └── anomaly/v1/                # model.joblib, metrics.json, model-card.md
+├── data/
+│   ├── raw/                       # dados brutos baixados (fora do Git)
+│   └── sample/sessions.csv        # amostra versionada usada nos testes
+├── notebooks/                     # 01 análise exploratória, 02 fator de demanda, 03 anomalias
+├── src/ml/
+│   ├── app.py                     # aplicação FastAPI (carrega os modelos na inicialização)
+│   ├── config.py                  # caminhos, semente, tipos de ponto e versões dos modelos
+│   ├── data/                      # download com MD5, loaders, painel hora a hora, amostra
+│   ├── features/                  # variáveis compartilhadas entre treino e inferência
+│   ├── models/                    # DemandFactorModel, AnomalyModel e persistência dos artefatos
+│   ├── training/                  # montagem dos conjuntos, avaliação, baselines e treino
+│   └── serving/                   # schemas, rotas e registro dos modelos carregados
+├── tests/                         # pytest: dados, variáveis, treino, modelos e API
+├── .github/workflows/ci.yml       # lint, formatação e testes
+└── pyproject.toml                 # dependências (runtime, dev, research) e entrada da Vercel
+```
+
+## 9. Limitações e próximos passos
+
+**Limitações atuais**
+
+- **Dados de outro contexto.** Os modelos foram treinados com dados da Noruega e da Finlândia. Capacidade dos locais, fila e tempo ocioso (no uso público) são estimados.
+- **Uso `COMMERCIAL` com um ponto por estação.** Ocupações intermediárias são interpoladas pelo modelo de demanda, sem dados reais por trás. Nesse uso o modelo empata com a persistência no MAE.
+- **Monotonicidade verificada, não imposta.** O fator não diminui quando a ocupação aumenta nos testes e nos notebooks, mas o `GradientBoostingRegressor` não garante isso no treino.
+- **Ocupação sem recarga (`phantom_occupation`).** É sinalizada em só 20% dos casos injetados (71% em `COMMERCIAL`, 12% em `PRIVATE`). Em garagem residencial, conectar à noite e quase não carregar porque a bateria já está cheia é comportamento normal nos dados, e o modelo aprendeu isso. Se o condomínio quiser coibir esse uso, o caminho é uma regra de negócio, como tarifa por tempo ocioso, e não o detector.
+- **Anomalias sintéticas.** A avaliação mede se o modelo encontra o que sabemos descrever. Com anomalias mais raras que os 5% injetados, a fração de alertas falsos entre os sinalizados aumenta; por isso o score deve ordenar a revisão do síndico, e nunca cobrar ou bloquear automaticamente.
+
+**Próximos passos**
+
+1. **Retreinar com dados reais do condomínio.** Assim que a plataforma acumular alguns meses de sessões, usar o mesmo pipeline (`ml.data` → `ml.features` → `ml.training`) com capacidade e fila reais e comparar com a v1 usando as mesmas métricas e baselines.
+2. **Rótulos do síndico.** Registrar se cada alerta foi procedente. Esses rótulos permitem recalibrar o limiar e, no futuro, treinar um modelo supervisionado.
+3. **Perfis de uso com KMeans (não implementado).** Agrupar moradores por padrão de recarga (horário, energia, tempo ocioso) para personalizar incentivos e enriquecer a detecção de anomalias. Este modelo estava previsto, mas não foi construído nesta sprint.
+4. **Tarifa por tempo ocioso** como regra de negócio complementar para os casos de ocupação sem recarga.
+5. **Monotonicidade imposta**, por exemplo com `HistGradientBoostingRegressor` e `monotonic_cst` na ocupação.
+6. **Uso do dia da semana** no detector, reavaliado com dados brasileiros.
+
+## Licença dos dados e créditos
+
+Os conjuntos de dados são distribuídos sob CC BY 4.0 e pertencem aos seus autores (Sørensen, 2024; Andrenacci, Bosch e Kulla, 2021). Os arquivos brutos não são redistribuídos neste repositório; a amostra em `data/sample/` é derivada deles, com a devida atribuição.
+
+Projeto acadêmico do Grupo 23 — FIAP Enterprise Challenge 2026, em parceria com a GoodWe.
